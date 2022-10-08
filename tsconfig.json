@@ -1,0 +1,17 @@
+{
+    "compilerOptions": {
+        "strict": true,
+        "target": "ESNext",
+        "module": "CommonJS",
+        "moduleResolution": "Node",
+        "noEmit": true,
+        "skipLibCheck": true,
+    },
+    "include": [
+        "./src/"
+    ],
+    "ts-node": {
+        "compilerOptions": {
+        },
+    }
+}

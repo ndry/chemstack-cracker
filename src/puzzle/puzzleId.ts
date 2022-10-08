@@ -1,0 +1,1 @@
+export const puzzleId = "chemstack@2" as const;
