@@ -152,7 +152,7 @@ export type Action =
     | _Action<"pourFromSecondaryIntoMain">
     | _Action<"swapTubes">;
 
-function act(
+export function act(
     state: State,
     action: Action,
 ) {
@@ -166,6 +166,7 @@ function act(
             case "swapTubes": return actions[action](...args);
         }
     })(action);
+    if (!canAct(state)) { console.warn("cannot act", state, action) }
     canAct(state) || _throw("Cannot act");
     const diff = act(state);
     return {
@@ -178,7 +179,7 @@ function act(
     };
 }
 
-function react(state: State) {
+export function react(state: State) {
     const reactions = getProblemReactions(state.problem);
 
     const applicableReactions = state.tubes
@@ -205,7 +206,7 @@ function react(state: State) {
     };
 }
 
-function cleanup(state: State) {
+export function cleanup(state: State) {
     const cleanups = state.tubes
         .map((tube, i) => [i, tube.slice(3)] as const)
         .filter((x) => x[1].length > 0);
@@ -235,7 +236,7 @@ function cleanup(state: State) {
     };
 }
 
-function giveaway(state: State) {
+export function giveaway(state: State) {
     const tubeToGiveAwayIndex = state.tubes.findIndex(tube =>
         state.targets[0].every((sid, i) => tube[i] === sid));
 
