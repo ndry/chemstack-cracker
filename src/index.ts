@@ -1,114 +1,112 @@
-import { evaluate, evaluateNoMem, _evaluate } from "./puzzle/evaluate";
+import { evaluateNoMem, _evaluate } from "./puzzle/evaluate";
 import { puzzleId } from "./puzzle/puzzleId";
 import { referenceSolution } from "./referenceSolution";
 import { _throw } from "./puzzle/_throw";
 import { evaluateEnv } from "./evaluateOptimized";
 import { Action, isSolved } from "./puzzle/actions";
+import { test } from "./test";
 import { problems } from "./puzzle/problems";
 
 
-
 console.log("puzzleId", puzzleId);
-// console.log("problem", referenceSolution.problem);
-console.log("final stats", evaluate(referenceSolution).state.stats);
-console.log("final stats opt", evaluateEnv(referenceSolution.problem).evaluate(referenceSolution.actions).stats);
+test();
 
-// {
-//     const count = 100000;
-//     const start = performance.now();
 
-//     for (let i = 0; i < count; i++) {
-//         evaluate(referenceSolution);
-//     }
 
-//     const end = performance.now();
-//     const dt = end - start;
+type ActionNetworkNode =
+    State & {
+        id: string,
+        from: Array<ActionNetworkEdge>,
+        to: Array<ActionNetworkEdge>,
+        knownDepth: number,
+    };
+type ActionNetworkEdge =
+    Action & {
+        id: string,
+        from: ActionNetworkNode,
+        to: ActionNetworkNode,
+    };
 
-//     console.log("orig mem", {
-//         count,
-//         dt: +dt.toFixed(0),
-//         dtpc_us: +(dt / count).toFixed(3) * 1000,
-//     });
-// }
+const actionNetwork = (() => {
+    const nodes = {} as Record<string, ActionNetworkNode>;
+    const edges = {} as Record<string, ActionNetworkEdge>;
+    const add = (action: Action | ActionNetworkEdge, from: State, to: State) => {
 
-// {
-//     const count = 2000;
-//     const start = performance.now();
-
-//     const ev1 = evaluateOptimized(referenceSolution.problem)
-//     for (let i = 0; i < count; i++) {
-//         ev1(referenceSolution.actions);
-//     }
-
-//     const end = performance.now();
-//     const dt = end - start;
-
-//     console.log("------- opt", {
-//         count,
-//         dt: +dt.toFixed(0),
-//         dtpc_us: +(dt / count).toFixed(3) * 1000,
-//     });
-// }
-
-// {
-//     const count = 2000;
-//     const start = performance.now();
-
-//     for (let i = 0; i < count; i++) {
-//         evaluateNoMem(referenceSolution.problem, referenceSolution.actions);
-//     }
-
-//     const end = performance.now();
-//     const dt = end - start;
-
-//     console.log("orig no mem", {
-//         count,
-//         dt: +dt.toFixed(0),
-//         dtpc_us: +(dt / count).toFixed(3) * 1000,
-//     });
-// }
+    }
+    return {
+        nodes,
+        edges,
+        
+    }
+})();
 
 
 const evenv = evaluateEnv(referenceSolution.problem);
-let traverseStops = 0;
-const solutions = [] as Action[][];
+// const evenv = evaluateEnv(problems[0]);
+let stops = 0;
+let actRounds = 0;
+let calls = 0;
+let solutions = 0;
 
-const traverseActionTree = (path: Action[], depth: number) => {
-    const state = evenv.evaluate(path);
-
-    if (isSolved(state)) {
-        solutions.push(path);
+type State = ReturnType<typeof evenv["evaluate"]>;
+const traverseActionTree = (state: State, depth: number) => {
+    calls++;
+    
+    if (evenv.isSolved(state)) {
+        solutions++;
         return;
     }
-
+    
     if (depth <= 0) {
-        traverseStops++;
+        stops++;
         return;
     }
-
+    
     for (const action of evenv.possibleActions) {
+        actRounds++;
         // @ts-ignore;
         const _canAct = evenv.canAct[action.action](state, ...action.args);
         if (!_canAct) { continue; }
-        traverseActionTree([...path, action], depth - 1);
+        const nextState = evenv.cloneState(state);
+        evenv.actRound(nextState, action);
+        const nextStateId = evenv.getStateId(nextState);
+
+        const nextStateNode =
+            actionNetwork.nodes[nextStateId]
+            ?? (actionNetwork.nodes[nextStateId] = Object.assign(nextState, {
+                id: nextStateId,
+                from: [],
+                to: [],
+                knownDepth: 0,
+            }));
+
+        // nextStateNode.from.push( ... )
+
+        if (nextStateNode.knownDepth < depth) {
+            traverseActionTree(nextState, depth - 1);
+            nextStateNode.knownDepth = Math.max(depth, nextStateNode.knownDepth);
+        }
+
     }
 }
 
-const depth = 7;
+const depth = 10;
 const start = performance.now();
-traverseActionTree([], depth);
+traverseActionTree(evenv.initialState(), depth);
 const end = performance.now();
 const dt = end - start;
 
-console.log("measuremenys", {
-    dt: (dt).toFixed(3) + " ms",
-    dtPerStop: (dt / traverseStops * 1000).toFixed(3) + " us",
-    dtPerAction: (dt / traverseStops / depth * 1000).toFixed(3) + " us",
+console.log("times", {
+    dt: (dt).toFixed(1) + " ms",
+    stop: (dt / stops * 1000).toFixed(1) + " us",
+    call: (dt / calls * 1000).toFixed(1) + " us",
+    act: (dt / actRounds * 1000).toFixed(1) + " us",
 });
 
 
 console.log({
-    traverseStops,
-    solutions: solutions
-        .map(s => s.map(a => `[${a.action}.${a.args.join()}]`).join("-")),
+    stops,
+    calls,
+    actRounds,
+    solutions,
 })
