@@ -1,14 +1,33 @@
 import { Action } from "./puzzle/actions";
-import { StateTransition } from "./puzzle/evaluate";
 import { Problem } from "./puzzle/problem";
 import { getProblemReactions } from "./puzzle/reactions";
 import { initialState, State, SubstanceId } from "./puzzle/state";
 
 
-export function evaluateOptimized(problem: Problem) {
+export function evaluateEnv(problem: Problem) {
     const rejson = <T>(obj: T): T => JSON.parse(JSON.stringify(obj));
 
-    const actions = {
+    const canAct = {
+        addIngredient: (state: State, ingredientId: SubstanceId) =>
+            true,
+
+        addTube: (state: State) =>
+            state.tubes.length <= 6,
+
+        trashTube: (state: State) =>
+            state.tubes.length > 1,
+
+        pourFromMainIntoSecondary: (state: State) =>
+            state.tubes[0].length > 0,
+
+        pourFromSecondaryIntoMain: (state: State) =>
+            state.tubes.length > 1 && state.tubes[1].length > 0,
+
+        swapTubes: (state: State) =>
+            state.tubes.length > 1,
+    };
+
+    const act = {
         addIngredient: (state: State, ingredientId: SubstanceId) => {
             state.tubes[0].push(ingredientId);
 
@@ -68,50 +87,63 @@ export function evaluateOptimized(problem: Problem) {
         getProblemReactions(problem)
             .map(r => [rid(...r.reagents), r]));
 
-    return (actions1: Action[]): StateTransition => {
-        let state = initialState(problem);
-        state.targets = rejson(state.targets);
+    return {
+        canAct,
+        possibleActions: [
+            ...Array.from(
+                { length: problem.ingredientCount },
+                (_, sid) => ({ action: "addIngredient", args: [sid] })),
+            { action: "addTube", args: [] },
+            { action: "trashTube", args: [] },
+            { action: "pourFromMainIntoSecondary", args: [] },
+            { action: "pourFromSecondaryIntoMain", args: [] },
+            { action: "swapTubes", args: [] },
+        ] as Action[],
+        evaluate: (actions1: Action[]) => {
+            let state = initialState(problem);
+            state.targets = rejson(state.targets);
 
-        for (const action of actions1) {
-            // @ts-ignore
-            actions[action.action](state, ...action.args);
+            for (const action of actions1) {
+                // @ts-ignore
+                act[action.action](state, ...action.args);
 
-            const { tubes, targets } = state;
+                const { tubes, targets } = state;
 
-            // react
-            for (let i = 0; i < tubes.length; i++) {
-                const tube = tubes[i];
-                const reaction = reactions[rid(tube[tube.length - 2], tube[tube.length - 1])];
-                if (reaction) {
-                    tube.splice(tube.length - 2, 2, ...reaction.products);
-                }
-            }
-
-            // clean
-            for (let i = 0; i < tubes.length; i++) {
-                const tube = tubes[i];
-                if (tube.length > 3) {
-                    const cleaned = tube.splice(3);
-                    for (let j = 0; j < cleaned.length; j++) {
-                        state.stats.price += cleaned[j];
+                // react
+                for (let i = 0; i < tubes.length; i++) {
+                    const tube = tubes[i];
+                    const reaction = reactions[rid(tube[tube.length - 2], tube[tube.length - 1])];
+                    if (reaction) {
+                        tube.splice(tube.length - 2, 2, ...reaction.products);
                     }
                 }
-            }
 
-            // giveaway
-            const target = targets[0];
-            for (let i = 0; i < tubes.length; i++) {
-                const tube = state.tubes[i];
-                if (tube[0] === target[0] && tube[1] === target[1] && tube[2] === target[2]) {
-                    tubes.splice(i, 1);
-                    if (tubes.length === 0) { tubes.push([]); }
-                    targets.splice(0, 1);
-                    state.isSolved = state.targets.length === 0;
-                    break;
+                // clean
+                for (let i = 0; i < tubes.length; i++) {
+                    const tube = tubes[i];
+                    if (tube.length > 3) {
+                        const cleaned = tube.splice(3);
+                        for (let j = 0; j < cleaned.length; j++) {
+                            state.stats.price += cleaned[j];
+                        }
+                    }
                 }
 
+                // giveaway
+                const target = targets[0];
+                for (let i = 0; i < tubes.length; i++) {
+                    const tube = state.tubes[i];
+                    if (tube[0] === target[0] && tube[1] === target[1] && tube[2] === target[2]) {
+                        tubes.splice(i, 1);
+                        if (tubes.length === 0) { tubes.push([]); }
+                        targets.splice(0, 1);
+                        state.isSolved = state.targets.length === 0;
+                        break;
+                    }
+
+                }
             }
+            return state;
         }
-        return { state };
     };
 }
