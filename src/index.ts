@@ -13,21 +13,11 @@ test();
 
 type ActionNetworkNode =
     State & {
-        id: string,
-        from: ActionNetworkEdge[],
-        to?: ActionNetworkEdge[],
+        to?: ActionNetworkNode[],
         knownDepth?: number,
     };
-type ActionNetworkEdge = {
-    // id: string,
-    action: Action
-    from: ActionNetworkNode,
-    to: ActionNetworkNode,
-};
 
 const nodes = {} as Record<string, ActionNetworkNode>;
-
-
 
 const evenv = evaluateEnv(referenceSolution.problem);
 // const evenv = evaluateEnv(problems[0]);
@@ -39,20 +29,8 @@ const getNode = (state: State) => {
     const stateId = evenv.getStateId(state);
     const node = nodes[stateId];
     if (node) { return node; }
-
-    const newNode = nodes[stateId] = Object.assign(state, {
-        id: stateId,
-        from: [],
-        to: undefined,
-        knownDepth: 0,
-        initialized: false,
-    });
-
-    if (evenv.isSolved(newNode)) {
-        solutionNodes.push(newNode);
-    }
-
-    return newNode;
+    if (evenv.isSolved(state)) { solutionNodes.push(state); }
+    return nodes[stateId] = state;
 }
 
 let edgeCount = 0;
@@ -70,40 +48,46 @@ const getNodeTo = (node: ActionNetworkNode) => {
             edgeCount++;
             const nextState = evenv.cloneState(node);
             evenv.actRound(nextState, action);
-            const edge = { action, from: node, to: getNode(nextState) };
-            node.to.push(edge);
-            edge.to.from.push(edge);
+            node.to.push(getNode(nextState));
         }
     }
 
     return node.to;
 }
 
+let calls = 0;
 const traverse = (stateNode: ActionNetworkNode, depth: number) => {
+    calls++;
+
     if (depth <= (stateNode.knownDepth ?? 0)) { return; }
     stateNode.knownDepth = depth;
 
     for (const edge of getNodeTo(stateNode)) {
-        traverse(edge.to, depth - 1);
+        traverse(edge, depth - 1);
     }
 
 }
 
 const depth = 11;
-const start = performance.now();
 const initialState = evenv.initialState();
+performance.mark('traverse');
 traverse(getNode(initialState), depth);
-const end = performance.now();
-const dt = end - start;
+performance.measure('traverse duration', 'traverse');
 
-console.log("times", {
-    dt: (dt).toFixed(1) + " ms",
-    edge: (dt / edgeCount * 1000).toFixed(1) + " us",
-    node: (dt / Object.keys(nodes).length * 1000).toFixed(1) + " us",
-});
+logMeasure('traverse duration');
 
 console.log({
+    calls,
     edges: edgeCount,
     nodes: Object.keys(nodes).length,
     solutionNodes: solutionNodes.length,
 });
+
+
+function logMeasure(name: string) {
+    console.log(
+        name,
+        performance.getEntriesByName(name)
+            .map(m => m.duration)
+            .reduce((acc, val) => acc + val, 0));
+}
