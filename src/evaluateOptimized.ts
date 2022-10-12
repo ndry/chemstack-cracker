@@ -18,41 +18,31 @@ export function evaluateEnv(problem: Problem) {
     const sidBase3 = sidBase2 * sidBase;
     const sidBase4 = sidBase3 * sidBase;
     const sidBase5 = sidBase4 * sidBase;
-    const rid = (r1: SubstanceId, r2: SubstanceId) => r1 * sidBase + r2;
     type TubeContent = number;
     const Tube = {
+        // optimized context
         empty: 1,
         isEmpty: (tube: TubeContent) => tube === 1,
 
         push: (tube: TubeContent, sid: SubstanceId) => tube * sidBase + sid,
-        peek: (tube: TubeContent) => tube % sidBase,
         _pop_out: -1,
         pop: (tube: TubeContent) => {
-            Tube._pop_out = Tube.peek(tube);
+            Tube._pop_out = tube % sidBase;
             return Math.floor(tube / sidBase);
         },
-        getId: (tube: TubeContent) => tube,
-        getReactionId: (tube: TubeContent) => tube < sidBase2 ? -1 : (tube % sidBase2),
-        applyReaction: (tube: TubeContent, products: Reaction["products"]) => {
-            tube = Math.floor(tube / sidBase2);
-            tube = Tube.push(tube, products[0]);
-            products.length > 1 && (tube = Tube.push(tube, products[1]!));
-            products.length > 2 && (tube = Tube.push(tube, products[2]!));
-            return tube;
+
+        // slow context
+        isTube: (tube: number) => {
+            while (tube !== 0) {
+                if (Tube.isEmpty(tube)) { return true; }
+                tube = Tube.pop(tube);
+            }
         },
-        clean: (tube: TubeContent) => {
-            if (tube < sidBase4) { return tube; }
-            if (tube < sidBase5) { return Math.floor(tube / sidBase); }
-            return Math.floor(tube / sidBase2);
-        },
-        fits: (tube: TubeContent, target: TubeContent) => tube === target,
-        clone: (tube: TubeContent) => tube,
         fromSidArray: (tube: SubstanceId[]) => tube.reduce((acc, val) => Tube.push(acc, val), Tube.empty),
         toSidArray(tube: TubeContent) {
-            let t = Tube.clone(tube);
             let arr: number[] = [];
-            while (t > 1) {
-                t = Tube.pop(t);
+            while (tube > 1) {
+                tube = Tube.pop(tube);
                 arr.unshift(Tube._pop_out);
             }
             return arr;
@@ -96,7 +86,7 @@ export function evaluateEnv(problem: Problem) {
         },
 
         trashTube: (state: State) => {
-            state.tubes.splice(0, 1);
+            state.tubes.shift();
         },
 
         pourFromMainIntoSecondary: (state: State) => {
@@ -121,16 +111,32 @@ export function evaluateEnv(problem: Problem) {
         },
     };
 
-    const reactions = Object.fromEntries(
-        getProblemReactions(problem)
-            .map(r => [rid(...r.reagents), r]));
+    const reactions = getProblemReactions(problem);
+    const reactCleanTable = Array.from({ length: sidBase5 + 1 }, (_, t) => {
+        if (!Tube.isTube(t)) { return t; }
+
+        const tube = Tube.toSidArray(t);
+
+        // react
+        const reaction = reactions.find(r =>
+            r.reagents[1] === tube[tube.length - 1]
+            && r.reagents[0] === tube[tube.length - 2]);
+        if (reaction) { tube.splice(tube.length - 2, 2, ...reaction.products); }
+        
+        // clean
+        tube.splice(3);
+
+        return Tube.fromSidArray(tube);
+    })
+
+
     const targets = getProblemTargets(problem).map(Tube.fromSidArray);
     const initialState = () => ({
         tubes: [Tube.empty],
         targetsSolved: 0,
     } as State);
     const cloneState = (state: State) => ({
-        tubes: state.tubes.map(Tube.clone),
+        tubes: [...state.tubes],
         targetsSolved: state.targetsSolved,
     });
     const actRound = (state: State, action: Action) => {
@@ -139,23 +145,15 @@ export function evaluateEnv(problem: Problem) {
 
         const { tubes } = state;
 
-        // react
+        // react & cleean
         for (let i = 0; i < tubes.length; i++) {
-            const reaction = reactions[Tube.getReactionId(tubes[i])];
-            if (reaction) { 
-                tubes[i] = Tube.applyReaction(tubes[i], reaction.products); 
-            }
-        }
-
-        // clean
-        for (let i = 0; i < tubes.length; i++) {
-            tubes[i] = Tube.clean(tubes[i]);
+            tubes[i] = reactCleanTable[tubes[i]];
         }
 
         // giveaway
         const target = targets[state.targetsSolved];
         for (let i = 0; i < tubes.length; i++) {
-            if (Tube.fits(tubes[i], target)) {
+            if (tubes[i] === target) {
                 tubes.splice(i, 1);
                 if (tubes.length === 0) { tubes.push(Tube.empty); }
                 state.targetsSolved++;
@@ -181,10 +179,7 @@ export function evaluateEnv(problem: Problem) {
         initialState,
         cloneState,
         getStateId: (state: State) =>
-            state.tubes
-                .map(Tube.getId)
-                .join("-")
-            + "|" + state.targetsSolved,
+            state.tubes.join("-") + "|" + state.targetsSolved,
         actRound,
         evaluate: (actions1: Action[]) => {
             let state = initialState();
