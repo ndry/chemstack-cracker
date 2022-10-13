@@ -49,3 +49,9 @@ export const referenceSolution = {
         { action: "pourFromSecondaryIntoMain", args: [] },
     ],
 } as Solution;
+
+export const referenceSolutionStats = {
+    actionCount: 37,
+    maxAddedTubeCount: 2,
+    price: 15
+};
