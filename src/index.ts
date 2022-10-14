@@ -25,33 +25,24 @@ const solutionNodes = [] as ActionNetworkNode[];
 
 type State = ReturnType<typeof evenv["evaluate"]>;
 
+let nodeMismatches = 0;
 const getNode = (state: State) => {
     const stateId = evenv.getStateId(state);
     const node = nodes[stateId];
-    if (node) { return node; }
+    if (node) { 
+        if (node !== state) { nodeMismatches++; }
+        return node;
+    }
     if (evenv.isSolved(state)) { solutionNodes.push(state); }
     return nodes[stateId] = state;
 }
 
 let edgeCount = 0;
 const getNodeTo = (node: ActionNetworkNode) => {
-    if (node.to) { return node.to; }
-
-    node.to = [];
-
-    if (!evenv.isSolved(node)) {
-        for (const action of evenv.possibleActions) {
-            // @ts-ignore;
-            const _canAct = evenv.canAct[action.action](node, ...action.args);
-            if (!_canAct) { continue; }
-
-            edgeCount++;
-            const nextState = evenv.cloneState(node);
-            evenv.actRound(nextState, action);
-            node.to.push(getNode(nextState));
-        }
+    if (!node.to) {
+        node.to = evenv.generateNextStates(node).map(getNode);
+        edgeCount += node.to.length;
     }
-
     return node.to;
 }
 
@@ -81,6 +72,7 @@ console.log({
     edges: edgeCount,
     nodes: Object.keys(nodes).length,
     solutionNodes: solutionNodes.length,
+    nodeMismatches,
 });
 
 

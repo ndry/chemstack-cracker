@@ -20,12 +20,14 @@ export function test() {
         const testState = evenv.evaluate(subActions);
 
         const cmp = (() => {
-            if (refState.tubes.length !== testState.tubes.length) {
+            const refTubes = refState.tubes;
+            const testTubes = evenv.tubes(testState);
+            if (refTubes.length !== testTubes.length) {
                 return "tubes.length do not match";
             }
-            for (let j = 0; j < refState.tubes.length; j++) {
-                const refTube = refState.tubes[j];
-                const testTube = evenv.Tube.toSidArray(testState.tubes[j]);
+            for (let j = 0; j < refTubes.length; j++) {
+                const refTube = refTubes[j];
+                const testTube = testTubes[j];
                 if (refTube.length !== testTube.length) {
                     return `tube[${j}].length do not match, refTube ${refTube.join("")}, testTube ${testTube.join("")}`;
                 }
@@ -35,7 +37,7 @@ export function test() {
                     }
                 }
             }
-            if (refState.targets.length !== (referenceSolution.problem.targets.length - testState.targetsSolved)) {
+            if (refState.targets.length !== testState.targetsLeft) {
                 return `solved targetst count do not match`;
             }
         })();
