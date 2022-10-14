@@ -88,11 +88,11 @@ const TubeModule = (capacity: number = 4) => (problem: Problem) => {
 type TubePackContent = number;
 const TubePack2 = (problem: Problem) => {
     const Tube = TubeModule(4)(problem);
-    const { e1, t1 } = Tube;
+    const radix = Tube.absent + 1;
 
-    const tube0 = (pack: TubePackContent) => pack % t1;
-    const tube1 = (pack: TubePackContent) => Math.floor(pack / t1);
-    const pack = (tube0: TubeContent, tube1: TubeContent) => tube1 * t1 + tube0;
+    const tube0 = (pack: TubePackContent) => pack % radix;
+    const tube1 = (pack: TubePackContent) => Math.floor(pack / radix);
+    const pack = (tube0: TubeContent, tube1: TubeContent) => tube1 * radix + tube0;
 
     return {
         Tube,
@@ -100,6 +100,8 @@ const TubePack2 = (problem: Problem) => {
         tube0,
         tube1,
         pack,
+        reactCleanPack: (tube0: TubeContent, tube1: TubeContent) =>
+            pack(Tube.reactClean(tube0), Tube.reactClean(tube1)),
 
         toArray: (pack: TubePackContent) => {
             const t0 = tube0(pack);
@@ -200,9 +202,9 @@ export function evaluateEnv(problem: Problem) {
             { firstTubes, targetsLeft }: State,
             ingredientId: SubstanceId
         ) => ({
-            firstTubes: Tubes.pack(
-                Tube.reactClean(Tube.push(Tubes.tube0(firstTubes), ingredientId)),
-                Tube.reactClean(Tubes.tube1(firstTubes)),
+            firstTubes: Tubes.reactCleanPack(
+                Tube.push(Tubes.tube0(firstTubes), ingredientId),
+                Tubes.tube1(firstTubes),
             ),
             restTubes: restTubesReactedCleaned,
             targetsLeft,
@@ -217,9 +219,9 @@ export function evaluateEnv(problem: Problem) {
             const tube1 = Tubes.tube1(firstTubes);
 
             const nextState = {
-                firstTubes: Tubes.pack(
+                firstTubes: Tubes.reactCleanPack(
                     Tube.empty,
-                    Tube.reactClean(Tubes.tube0(firstTubes)),
+                    Tubes.tube0(firstTubes),
                 ),
                 restTubes: [...restTubesReactedCleaned],
                 targetsLeft,
@@ -244,7 +246,7 @@ export function evaluateEnv(problem: Problem) {
             return {
                 firstTubes: Tubes.pack(
                     Tube.reactClean(tube1),
-                    tube2
+                    tube2 !== undefined
                         ? tube2
                         : Tube.absent,
                 ),
@@ -264,11 +266,11 @@ export function evaluateEnv(problem: Problem) {
             const tube1 = Tubes.tube1(firstTubes);
 
             return ({
-                firstTubes: Tubes.pack(
-                    Tube.reactClean(Tube.pop(tube0)),
+                firstTubes: Tubes.reactCleanPack(
+                    Tube.pop(tube0),
                     Tube.isAbsent(tube1)
-                        ? tube1
-                        : Tube.reactClean(Tube.push(Tubes.tube1(firstTubes), Tube.peek(tube0))),
+                        ? Tube.absent
+                        : Tube.push(tube1, Tube.peek(tube0)),
                 ),
                 restTubes: restTubesReactedCleaned,
                 targetsLeft,
@@ -284,9 +286,9 @@ export function evaluateEnv(problem: Problem) {
             if (Tube.isAbsent(tube1) || Tube.isEmpty(tube1)) { return; }
 
             return ({
-                firstTubes: Tubes.pack(
-                    Tube.reactClean(Tube.push(Tubes.tube0(firstTubes), Tube.peek(tube1))),
-                    Tube.reactClean(Tube.pop(tube1)),
+                firstTubes: Tubes.reactCleanPack(
+                    Tube.push(Tubes.tube0(firstTubes), Tube.peek(tube1)),
+                    Tube.pop(tube1),
                 ),
                 restTubes: restTubesReactedCleaned,
                 targetsLeft,
@@ -302,9 +304,9 @@ export function evaluateEnv(problem: Problem) {
             if (Tube.isAbsent(Tubes.tube1(firstTubes))) { return; }
 
             return ({
-                firstTubes: Tubes.pack(
-                    Tube.reactClean(tube1),
-                    Tube.reactClean(Tubes.tube0(firstTubes))
+                firstTubes: Tubes.reactCleanPack(
+                    tube1,
+                    Tubes.tube0(firstTubes),
                 ),
                 restTubes: restTubesReactedCleaned,
                 targetsLeft,
@@ -318,10 +320,14 @@ export function evaluateEnv(problem: Problem) {
     return {
         // optimized
         getStateId,
+        isSolved,
         generateNextStates: (state: State) => {
             if (isSolved(state)) { return []; }
 
-            const restTubesReactedCleaned = state.restTubes.map(Tube.reactClean);
+            const restTubesReactedCleaned =
+                state.restTubes.some(x => x !== Tube.reactClean(x))
+                    ? state.restTubes.map(Tube.reactClean)
+                    : state.restTubes;
 
             return [
                 ...ingredients.map(sid => actReactClean.addIngredient(restTubesReactedCleaned, state, sid)),
@@ -332,7 +338,6 @@ export function evaluateEnv(problem: Problem) {
                 actReactClean.swapTubes(restTubesReactedCleaned, state),
             ].filter((x): x is State => Boolean(x)).map(giveaway);
         },
-        isSolved,
 
 
         // regular use
