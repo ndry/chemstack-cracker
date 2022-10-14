@@ -1,11 +1,13 @@
 import { evaluate } from "./puzzle/evaluate";
 import { referenceSolution } from "./referenceSolution";
 import { evaluateEnv } from "./evaluateOptimized";
+import { getProblemTargets } from "./puzzle/targets";
 
 export function test() {
 
     // console.log("test");
     // console.log("problem", referenceSolution.problem);
+    // console.log("targets", getProblemTargets(referenceSolution.problem));
 
     const evenv = evaluateEnv(referenceSolution.problem);
 
