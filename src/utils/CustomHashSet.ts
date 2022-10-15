@@ -7,6 +7,7 @@ export function CustomHashSet<T>({
 }) {
     const buckets = new Map<any, T[]>();
     let maxBucketLength = 0;
+    let size = 0;
 
     return {
         add: (el: T) => {
@@ -16,6 +17,8 @@ export function CustomHashSet<T>({
             for (const bel of bucket) { if (equalsFn(el, bel)) { return bel; } }
             bucket.push(el);
 
+            size++;
+
             if (bucket.length > maxBucketLength) {
                 maxBucketLength = bucket.length;
                 verbose && console.log(
@@ -24,5 +27,7 @@ export function CustomHashSet<T>({
 
             return el;
         },
+
+        get size() { return size; }
     };
 }

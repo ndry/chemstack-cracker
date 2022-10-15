@@ -26,24 +26,20 @@ const nodes = CustomHashSet<ActionNetworkNode>({
     equalsFn: evenv.stateEquals,
 });
 
-const solutionNodes = [] as ActionNetworkNode[];
+const solutionNodes = new Set<ActionNetworkNode>();
 
 type State = ReturnType<typeof evenv["evaluate"]>;
 
-let nodeCount = 0;
 const getNode = (state: State) => {
     const node = nodes.add(state);
-    if (node === state) {
-        nodeCount++;
-        if (evenv.isSolved(state)) { solutionNodes.push(state); }
-    }
+    if (evenv.isSolved(state)) { solutionNodes.add(state); }
     return node;
 }
 
 let edgeCount = 0;
 const getNodeTo = (node: ActionNetworkNode) => {
     if (!node.to) {
-        node.to = evenv.generateNextStates(node).map(getNode);
+        node.to = [...evenv.generateNextStates(node)].map(getNode);
         edgeCount += node.to.length;
     }
     return node.to;
@@ -56,7 +52,19 @@ const traverse = (stateNode: ActionNetworkNode, depth: number) => {
     if (depth <= (stateNode.knownDepth ?? 0)) { return; }
     stateNode.knownDepth = depth;
 
-    for (const edge of getNodeTo(stateNode)) {
+    const edges = getNodeTo(stateNode);
+
+    // const hasBetterEdges = edges.some(edge => edge.targetsLeft < stateNode.targetsLeft);
+    // if (hasBetterEdges) {
+    //     for (const edge of edges) {
+    //         if (edge.targetsLeft < stateNode.targetsLeft) {
+    //             traverse(edge, depth - 1);
+    //         }
+    //     }
+    //     return;
+    // }
+
+    for (const edge of edges) {
         traverse(edge, depth - 1);
     }
 
@@ -73,10 +81,11 @@ logMeasure('traverse duration');
 console.log({
     calls,
     edges: edgeCount,
-    nodes: nodeCount,
-    solutionNodes: solutionNodes.length,
+    nodes: nodes.size,
+    solutionNodes: solutionNodes.size,
 });
 
+// evenv.printStats();
 
 function logMeasure(name: string) {
     console.log(
