@@ -13,8 +13,7 @@ export function CustomHashSet<T>({
             const hash = hashFn(el);
             let bucket = buckets.get(hash);
             if (!bucket) { buckets.set(hash, bucket = []); }
-            const knownEl = bucket.find(bel => equalsFn(el, bel));
-            if (knownEl) { return knownEl; }
+            for (const bel of bucket) { if (equalsFn(el, bel)) { return bel; } }
             bucket.push(el);
 
             if (bucket.length > maxBucketLength) {

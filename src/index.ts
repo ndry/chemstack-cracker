@@ -62,7 +62,7 @@ const traverse = (stateNode: ActionNetworkNode, depth: number) => {
 
 }
 
-const depth = 11;
+const depth = 12;
 const initialState = evenv.initialState();
 performance.mark('traverse');
 traverse(getNode(initialState), depth);
