@@ -6,6 +6,7 @@ import { evaluateEnv } from "./evaluateOptimized";
 import { Action, isSolved } from "./puzzle/actions";
 import { test } from "./test";
 import { problems } from "./puzzle/problems";
+import { CustomHashSet } from "./utils/CustomHashSet";
 
 
 console.log("puzzleId", puzzleId);
@@ -17,24 +18,26 @@ type ActionNetworkNode =
         knownDepth?: number,
     };
 
-const nodes = {} as Record<string, ActionNetworkNode>;
-
 const evenv = evaluateEnv(referenceSolution.problem);
 // const evenv = evaluateEnv(problems[0]);
+
+const nodes = CustomHashSet<ActionNetworkNode>({
+    hashFn: evenv.getStateHash,
+    equalsFn: evenv.stateEquals,
+});
+
 const solutionNodes = [] as ActionNetworkNode[];
 
 type State = ReturnType<typeof evenv["evaluate"]>;
 
-let nodeMismatches = 0;
+let nodeCount = 0;
 const getNode = (state: State) => {
-    const stateId = evenv.getStateId(state);
-    const node = nodes[stateId];
-    if (node) { 
-        if (node !== state) { nodeMismatches++; }
-        return node;
+    const node = nodes.add(state);
+    if (node === state) {
+        nodeCount++;
+        if (evenv.isSolved(state)) { solutionNodes.push(state); }
     }
-    if (evenv.isSolved(state)) { solutionNodes.push(state); }
-    return nodes[stateId] = state;
+    return node;
 }
 
 let edgeCount = 0;
@@ -70,9 +73,8 @@ logMeasure('traverse duration');
 console.log({
     calls,
     edges: edgeCount,
-    nodes: Object.keys(nodes).length,
+    nodes: nodeCount,
     solutionNodes: solutionNodes.length,
-    nodeMismatches,
 });
 
 

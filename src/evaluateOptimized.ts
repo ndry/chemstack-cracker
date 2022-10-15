@@ -179,23 +179,6 @@ export function evaluateEnv(problem: Problem) {
     };
     const isSolved = (state: State) => state.targetsLeft === 0;
 
-    const getStateId = (() => {
-        const _id = Symbol();
-        return (state: State) => {
-            // const stateWithId = state as any as State & { [_id]?: string };
-            // if (stateWithId[_id] !== undefined) { return stateWithId[_id]; }
-
-            const restTubesWithId = state.restTubes as any as State["restTubes"] & { [_id]?: string };
-            const restTubesId =
-                restTubesWithId[_id]
-                ?? (restTubesWithId[_id] = restTubesWithId.join("-"));
-
-            const stateId = state.firstTubes + "|" + restTubesId + "|" + state.targetsLeft;
-            // stateWithId[_id] = stateId;
-            return stateId;
-        };
-    })();
-
     const actReactClean = {
         addIngredient: (
             restTubesReactedCleaned: State["restTubes"],
@@ -319,7 +302,24 @@ export function evaluateEnv(problem: Problem) {
 
     return {
         // optimized
-        getStateId,
+        getStateHash: (state: State) => {
+            let hash = state.firstTubes * targets.length + state.targetsLeft;
+            for (let i = 0; i < state.restTubes.length; i++) {
+                hash = hash ^ (state.restTubes[i] << (i * 4)) * 0x01000193;
+            }
+            return hash;
+        },
+        stateEquals: (s1: State, s2: State) => {
+            if (s1 === s2) { return true; }
+            if (s1.firstTubes !== s2.firstTubes) { return false; }
+            if (s1.targetsLeft !== s2.targetsLeft) { return false; }
+            if (s1.restTubes === s2.restTubes) { return true; }
+            if (s1.restTubes.length !== s2.restTubes.length) { return false; }
+            for (let i = 0; i < s1.restTubes.length; i++) {
+                if (s1.restTubes[i] !== s2.restTubes[i]) { return false; }
+            }
+            return true;
+        },
         isSolved,
         generateNextStates: (state: State) => {
             if (isSolved(state)) { return []; }
