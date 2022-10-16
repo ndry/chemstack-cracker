@@ -23,7 +23,7 @@ const TubeModule = (capacity: number = 4) => (problem: Problem) => {
     // ?...??11[1...110#] - one slot filled, where # in [0, substanceMaxCount)
     // ?...?111[1...10##] - two slots filled
     // ...
-    // 111...1[0###...#] - all slots filled
+    // 1111...1[0###...#] - all slots filled
     // Thus, the whole range [0, 111...1] is a valid tubes state
 
 
@@ -117,11 +117,11 @@ export function evaluateEnv(problem: Problem) {
     const Tubes = TubePack2(problem);
     const { Tube } = Tubes;
 
-    type State = {
+    type State = Readonly<{
         firstTubes: TubePackContent,
-        restTubes: TubeContent[];
+        restTubes: ReadonlyArray<TubeContent>;
         targetsLeft: number;
-    };
+    }>;
 
     const targets = getProblemTargets(problem).map(Tube.fromSidArray);
     const initialState = () => ({

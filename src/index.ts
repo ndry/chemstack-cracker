@@ -61,24 +61,26 @@ const traverse = (node: ActionNetworkNode, depth: number) => {
 
 const initialState = nodes.add(evenv.initialState());
 
-for (let i = 0; i < 5; i++) {
-    const ns = apipe(
-        nodes.values(),
-        it.filter(n => n.knownDepth === undefined),
-        x => [...x]);
-    ns.sort((a, b) => a.targetsLeft - b.targetsLeft);
-    const ns2 = ns.slice(0, 1000);
-    performance.mark(`traverse${i}`);
-    // nodes = CustomHashSet<ActionNetworkNode>({
-    //     hashFn: evenv.getStateHash,
-    //     equalsFn: evenv.stateEquals,
-    // });
-    measure('traverse' + i, () => {
-        for (const n of ns2) {
-            traverse(n, 5);
-        }
-    }).log();
-}
+measure('traverse all', () => {
+    for (let i = 0; i < 5; i++) {
+        const ns = apipe(
+            nodes.values(),
+            it.filter(n => n.knownDepth === undefined),
+            x => [...x]);
+        ns.sort((a, b) => a.targetsLeft - b.targetsLeft);
+        const ns2 = ns.slice(0, 1000);
+        performance.mark(`traverse${i}`);
+        // nodes = CustomHashSet<ActionNetworkNode>({
+        //     hashFn: evenv.getStateHash,
+        //     equalsFn: evenv.stateEquals,
+        // });
+        measure('traverse' + i, () => {
+            for (const n of ns2) {
+                traverse(n, 5);
+            }
+        }).log();
+    }
+}).log();
 
 
 console.log({
@@ -97,34 +99,42 @@ const traverseBack = (node: ActionNetworkNode, path: ActionNetworkNode[] = []): 
         .flatMap(n => traverseBack(n, path));
 }
 
-function iterateWave(wave: number) {
+function iterateWave() {
     let changed = false;
     for (const node of nodes.values()) {
-        if (node.wave === wave) {
-            if (node.to) {
-                for (const n of node.to) {
-                    if ((n.wave ?? Infinity) > wave + 1) {
-                        changed = true;
-                        n.wave = wave + 1;
-                    }
-                }
-            }
+        let min = Infinity;
+        for (const n of node.from!) {
+            min = Math.min(min, n.wave ?? Infinity);
+        }
+        min = min + 1;
+        if (min < (node.wave ?? Infinity)) {
+            node.wave = min;
+            changed = true;
         }
     }
     return changed;
 }
 
-initialState.wave = 0;
-for (let wave = 0; true; wave++) {
-    console.log("wave", wave);
-    if (!iterateWave(wave)) {
-        break;
-    }
-}
+measure('iterateWave', () => {
+    const process = globalThis.process;
+    initialState.wave = 0;
+    process && process.stdout.write("wave");
+    do {
+        process ? process.stdout.write(" .") : console.log("wave", ".");
+    } while (iterateWave())
+    process && process?.stdout.write("\n");
+}).log();
 
 
 const solutions = [...solutionNodes].flatMap(n => traverseBack(n));
 solutions.sort((a, b) => a.length - b.length);
-console.log("shortest solution", solutions[0].length, solutions[0].map(n => {
-    return evenv.tubes(n);
-}));
+console.log(
+    "shortest solution",
+    solutions[0].length,
+    solutions[0].map(n =>
+        evenv.tubes(n)
+            .reverse()
+            .map(t => t.length > 0 ? t.join("") : "×")
+            .join("-")
+        + "₀₁₂₃₄₅₆₇₈₉"[n.targetsLeft]
+    ).join(" "));
