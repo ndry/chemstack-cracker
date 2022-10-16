@@ -7,6 +7,9 @@ import { Action, isSolved } from "./puzzle/actions";
 import { test } from "./test";
 import { problems } from "./puzzle/problems";
 import { CustomHashSet } from "./utils/CustomHashSet";
+import * as it from "./utils/it";
+import { apipe } from "./utils/apipe";
+import { measure } from "./measure";
 
 
 console.log("puzzleId", puzzleId);
@@ -14,14 +17,16 @@ test();
 
 type ActionNetworkNode =
     State & {
+        from?: Set<ActionNetworkNode>,
         to?: ActionNetworkNode[],
         knownDepth?: number,
+        wave?: number,
     };
 
 const evenv = evaluateEnv(referenceSolution.problem);
 // const evenv = evaluateEnv(problems[0]);
 
-const nodes = CustomHashSet<ActionNetworkNode>({
+let nodes = CustomHashSet<ActionNetworkNode>({
     hashFn: evenv.getStateHash,
     equalsFn: evenv.stateEquals,
 });
@@ -30,53 +35,51 @@ const solutionNodes = new Set<ActionNetworkNode>();
 
 type State = ReturnType<typeof evenv["evaluate"]>;
 
-const getNode = (state: State) => {
-    const node = nodes.add(state);
-    if (evenv.isSolved(state)) { solutionNodes.add(state); }
-    return node;
-}
-
-let edgeCount = 0;
-const getNodeTo = (node: ActionNetworkNode) => {
-    if (!node.to) {
-        node.to = [...evenv.generateNextStates(node)].map(getNode);
-        edgeCount += node.to.length;
-    }
-    return node.to;
-}
-
 let calls = 0;
-const traverse = (stateNode: ActionNetworkNode, depth: number) => {
+let edgeCount = 0;
+const traverse = (node: ActionNetworkNode, depth: number) => {
     calls++;
 
-    if (depth <= (stateNode.knownDepth ?? 0)) { return; }
-    stateNode.knownDepth = depth;
+    if (depth <= (node.knownDepth ?? 0)) { return; }
+    node.knownDepth = depth;
 
-    const edges = getNodeTo(stateNode);
+    if (!node.to) {
+        node.to = [...evenv.generateNextStates(node)];
+        for (let i = 0; i < node.to.length; i++) {
+            const edge = node.to[i] = nodes.add(node.to[i]);
+            if (evenv.isSolved(edge)) { solutionNodes.add(edge); }
+            (edge.from ?? (edge.from = new Set())).add(node);
+        }
+        edgeCount += node.to.length;
+    }
 
-    // const hasBetterEdges = edges.some(edge => edge.targetsLeft < stateNode.targetsLeft);
-    // if (hasBetterEdges) {
-    //     for (const edge of edges) {
-    //         if (edge.targetsLeft < stateNode.targetsLeft) {
-    //             traverse(edge, depth - 1);
-    //         }
-    //     }
-    //     return;
-    // }
-
-    for (const edge of edges) {
+    for (const edge of node.to) {
         traverse(edge, depth - 1);
     }
 
 }
 
-const depth = 12;
-const initialState = evenv.initialState();
-performance.mark('traverse');
-traverse(getNode(initialState), depth);
-performance.measure('traverse duration', 'traverse');
+const initialState = nodes.add(evenv.initialState());
 
-logMeasure('traverse duration');
+for (let i = 0; i < 5; i++) {
+    const ns = apipe(
+        nodes.values(),
+        it.filter(n => n.knownDepth === undefined),
+        x => [...x]);
+    ns.sort((a, b) => a.targetsLeft - b.targetsLeft);
+    const ns2 = ns.slice(0, 1000);
+    performance.mark(`traverse${i}`);
+    // nodes = CustomHashSet<ActionNetworkNode>({
+    //     hashFn: evenv.getStateHash,
+    //     equalsFn: evenv.stateEquals,
+    // });
+    measure('traverse' + i, () => {
+        for (const n of ns2) {
+            traverse(n, 5);
+        }
+    }).log();
+}
+
 
 console.log({
     calls,
@@ -85,12 +88,43 @@ console.log({
     solutionNodes: solutionNodes.size,
 });
 
-// evenv.printStats();
-
-function logMeasure(name: string) {
-    console.log(
-        name,
-        performance.getEntriesByName(name)
-            .map(m => m.duration)
-            .reduce((acc, val) => acc + val, 0));
+const traverseBack = (node: ActionNetworkNode, path: ActionNetworkNode[] = []): ActionNetworkNode[][] => {
+    path = [node, ...path];
+    if (node.wave === 0) { return [path]; }
+    if (!node.from) { return []; }
+    return [...node.from]
+        .filter(n => n.wave! < node.wave!)
+        .flatMap(n => traverseBack(n, path));
 }
+
+function iterateWave(wave: number) {
+    let changed = false;
+    for (const node of nodes.values()) {
+        if (node.wave === wave) {
+            if (node.to) {
+                for (const n of node.to) {
+                    if ((n.wave ?? Infinity) > wave + 1) {
+                        changed = true;
+                        n.wave = wave + 1;
+                    }
+                }
+            }
+        }
+    }
+    return changed;
+}
+
+initialState.wave = 0;
+for (let wave = 0; true; wave++) {
+    console.log("wave", wave);
+    if (!iterateWave(wave)) {
+        break;
+    }
+}
+
+
+const solutions = [...solutionNodes].flatMap(n => traverseBack(n));
+solutions.sort((a, b) => a.length - b.length);
+console.log("shortest solution", solutions[0].length, solutions[0].map(n => {
+    return evenv.tubes(n);
+}));
