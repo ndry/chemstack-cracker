@@ -35,8 +35,8 @@ export function CustomHashSet<T>({
             return el;
         },
 
-        values: function* () { for (const b of buckets.values()) { yield* b; } },
+        [Symbol.iterator]: function* () { for (const b of buckets.values()) { yield* b; } },
 
-        get size() { return size; }
+        get size() { return size; },
     };
 }

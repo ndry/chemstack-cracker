@@ -14,6 +14,9 @@ export const tap = <T, U>(f: (x: T) => U) =>
 export const filter = <T>(f: (x: T) => unknown) =>
     function* (s: Iterable<T>) { for (const x of s) if (f(x)) yield x; }
 
+export const guard = <T, S extends T>(f: ((x: T) => x is S)) =>
+    function* (s: Iterable<T>) { for (const x of s) if (f(x)) yield x; }
+
 export const take = <T>(count: number) => function* (s: Iterable<T>) {
     if (--count < 0) { return; }
     for (const x of s) {
@@ -29,6 +32,27 @@ export const scan = <TAccumulator, TValue>(
     seed: TAccumulator
 ) => function* (s: Iterable<TValue>) { for (const x of s) yield seed = reducer(seed, x); }
 
+export const minBy = <T>(
+    propFn: (x: T) => number
+) => function (s: Iterable<T>) { 
+    let initialized = false;
+    let best = undefined as T | undefined;
+    let bestProp = undefined as number | undefined;
+    for (const x of s) {
+        const xProp = propFn(x);
+        if (!initialized) {
+            initialized = true;
+            bestProp = xProp;
+            best = x;
+            continue;
+        }  
+        if (xProp < bestProp!) {
+            bestProp = xProp;
+            best = x;
+        }
+    }
+    return best;
+}
 
 export const first = <T>() =>
     (s: Iterable<T>) => { for (const x of s) { return x; } };

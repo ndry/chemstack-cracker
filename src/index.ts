@@ -15,9 +15,10 @@ test();
 
 type ActionNetworkNode =
     State & {
+        bestKnownActionCount?: number,
+
         from?: Set<ActionNetworkNode>,
         knownDepth?: number,
-        wave?: number,
     };
 
 const evenv = evaluateEnv(referenceSolution.problem);
@@ -39,37 +40,38 @@ const traverse = (node: ActionNetworkNode, depth: number) => {
     if (depth <= (node.knownDepth ?? 0)) { return; }
     node.knownDepth = depth;
 
-    for (const edge of [...evenv.generateNextStates(node)].map(nodes.add)) {
-        if (evenv.isSolved(edge)) { solutionNodes.add(edge); }
-        (edge.from ?? (edge.from = new Set())).add(node);
-        traverse(edge, depth - 1);
+    for (const nextNode of [...evenv.generateNextStates(node)].map(nodes.add)) {
+        if (evenv.isSolved(nextNode)) { solutionNodes.add(nextNode); }
+        (nextNode.from ?? (nextNode.from = new Set())).add(node);
+        nextNode.bestKnownActionCount = Math.min(
+            node.bestKnownActionCount! + 1,
+            nextNode.bestKnownActionCount ?? Infinity,
+        );
+
+        traverse(nextNode, depth - 1);
     }
 }
 
-
-
-function iterateWave() {
-    let changed = false;
-    for (const node of nodes.values()) {
-        let min = Infinity;
-        for (const n of node.from!) {
-            min = Math.min(min, n.wave ?? Infinity);
-        }
-        min = min + 1;
-        if (min < (node.wave ?? Infinity)) {
-            node.wave = min;
-            changed = true;
-        }
-    }
-    return changed;
+const getBestPathToOrigin = (node: ActionNetworkNode): ActionNetworkNode[] | undefined => {
+    if (node.bestKnownActionCount === 0) { return [node]; }
+    if (!node.from) { return; }
+    const bestPath = apipe(
+        node.from,
+        it.filter(n => n.bestKnownActionCount! < node.bestKnownActionCount!),
+        it.map(getBestPathToOrigin),
+        it.minBy(fromPath => fromPath?.length ?? Infinity),
+    );
+    return bestPath ? [...bestPath, node] : undefined;
 }
 
 measure('total', () => {
     const initialState = nodes.add(evenv.initialState());
+    initialState.bestKnownActionCount = 0;
+
     measure('traverse all', () => {
         for (let i = 0; i < 5; i++) {
             const ns = apipe(
-                nodes.values(),
+                nodes[Symbol.iterator](),
                 it.filter(n => n.knownDepth === undefined),
                 x => [...x]);
             ns.sort((a, b) => a.targetsLeft - b.targetsLeft);
@@ -94,36 +96,21 @@ measure('total', () => {
         solutionNodes: solutionNodes.size,
     });
 
-    const traverseBack = (node: ActionNetworkNode, path: ActionNetworkNode[] = []): ActionNetworkNode[][] => {
-        path = [node, ...path];
-        if (node.wave === 0) { return [path]; }
-        if (!node.from) { return []; }
-        return [...node.from]
-            .filter(n => n.wave! < node.wave!)
-            .flatMap(n => traverseBack(n, path));
-    }
-    measure('iterateWave', () => {
-        const process = globalThis.process;
-        initialState.wave = 0;
-        process && process.stdout.write("wave");
-        do {
-            process ? process.stdout.write(" .") : console.log("wave", ".");
-        } while (iterateWave())
-        process && process?.stdout.write("\n");
-    }).log();
-
-    const solutions = [...solutionNodes].flatMap(n => traverseBack(n));
-    solutions.sort((a, b) => a.length - b.length);
+    const bestSolution = getBestPathToOrigin(apipe(
+        solutionNodes,
+        it.minBy(node => node.bestKnownActionCount!),
+    )!)!;
     console.log(
         "shortest solution",
-        solutions[0].length,
-        solutions[0].map(n =>
+        bestSolution.length,
+        bestSolution.map(n =>
             evenv.tubes(n)
                 .reverse()
                 .map(t => t.length > 0 ? t.join("") : "×")
                 .join("-")
             + "₀₁₂₃₄₅₆₇₈₉"[n.targetsLeft]
         ).join(" "));
+
 }).log();
 
 
