@@ -8,6 +8,7 @@ import { CustomHashSet } from "./utils/CustomHashSet";
 import * as it from "./utils/it";
 import { apipe } from "./utils/apipe";
 import { measure } from "./measure";
+import { tuple } from "./utils/tuple";
 
 
 console.log("puzzleId", puzzleId);
@@ -16,9 +17,11 @@ test();
 type ActionNetworkNode =
     State & {
         bestKnownActionCount?: number,
+        from?: ActionNetworkNode,
 
-        from?: Set<ActionNetworkNode>,
         knownDepth?: number,
+
+        keep?: boolean,
     };
 
 const evenv = evaluateEnv(referenceSolution.problem);
@@ -42,26 +45,53 @@ const traverse = (node: ActionNetworkNode, depth: number) => {
 
     for (const nextNode of [...evenv.generateNextStates(node)].map(nodes.add)) {
         if (evenv.isSolved(nextNode)) { solutionNodes.add(nextNode); }
-        (nextNode.from ?? (nextNode.from = new Set())).add(node);
-        nextNode.bestKnownActionCount = Math.min(
-            node.bestKnownActionCount! + 1,
-            nextNode.bestKnownActionCount ?? Infinity,
-        );
+        const nextBestKnownActionCount = node.bestKnownActionCount! + 1;
+        if (nextBestKnownActionCount < (nextNode.bestKnownActionCount ?? Infinity)) {
+            nextNode.from = node;
+            nextNode.bestKnownActionCount = nextBestKnownActionCount;
+        }
 
         traverse(nextNode, depth - 1);
     }
 }
 
-const getBestPathToOrigin = (node: ActionNetworkNode): ActionNetworkNode[] | undefined => {
+const cleanUpCache = (selected: Iterable<ActionNetworkNode>) => {
+    for (const node of nodes) { node.keep = false; }
+    for (const node of selected) {
+        let n: ActionNetworkNode | undefined = node;
+        do { n.keep = true; } while ((n = n.from) && !n.keep);
+    }
+    nodes.filterInPlace(node => node.keep);
+}
+
+
+const trackBack = (node: ActionNetworkNode): ActionNetworkNode[] => {
     if (node.bestKnownActionCount === 0) { return [node]; }
-    if (!node.from) { return; }
-    const bestPath = apipe(
-        node.from,
-        it.filter(n => n.bestKnownActionCount! < node.bestKnownActionCount!),
-        it.map(getBestPathToOrigin),
-        it.minBy(fromPath => fromPath?.length ?? Infinity),
-    );
-    return bestPath ? [...bestPath, node] : undefined;
+    return [...trackBack(node.from!), node];
+}
+
+function orderByAndLimit<T>(s: Iterable<T>, propFn: (x: T) => number, limit: number) {
+    const output = [] as T[];
+    if (limit < 1) { return output; }
+
+    for (const x of s) {
+        if (output.length === 0 || propFn(x) <= propFn(output[0])) {
+            output.unshift(x);
+            output.splice(limit);
+            continue;
+        }
+        if (propFn(x) >= propFn(output[output.length - 1])) {
+            if (output.length < limit) {
+                output.push(x);
+            }
+            continue;
+        }
+        const i = output.findIndex(x1 => propFn(x) < propFn(x1));
+        output.splice(i, 0, x);
+        output.splice(limit);
+    }
+
+    return output;
 }
 
 measure('total', () => {
@@ -70,21 +100,33 @@ measure('total', () => {
 
     measure('traverse all', () => {
         for (let i = 0; i < 5; i++) {
-            const ns = apipe(
-                nodes[Symbol.iterator](),
-                it.filter(n => n.knownDepth === undefined),
-                x => [...x]);
-            ns.sort((a, b) => a.targetsLeft - b.targetsLeft);
-            const ns2 = ns.slice(0, 1000);
-            performance.mark(`traverse${i}`);
-            // nodes = CustomHashSet<ActionNetworkNode>({
-            //     hashFn: evenv.getStateHash,
-            //     equalsFn: evenv.stateEquals,
-            // });
-            measure('traverse' + i, () => {
-                for (const n of ns2) {
-                    traverse(n, 5);
-                }
+            measure('traverse iteration' + i, () => {
+                console.log("nodes in cache",
+                    nodes.size,
+                    process.memoryUsage().heapUsed.toExponential());
+
+                const selectedNodes = orderByAndLimit(
+                    apipe(
+                        nodes[Symbol.iterator](),
+                        it.filter(n => n.knownDepth === undefined
+                            && !evenv.isSolved(n)
+                        )),
+                    n => n.targetsLeft,
+                    15);
+
+                measure('node cache cleanup ' + i, () => {
+                    cleanUpCache([...selectedNodes, ...solutionNodes]);
+                }).log();
+
+                console.log("nodes in cache after cleanup",
+                    nodes.size,
+                    process.memoryUsage().heapUsed.toExponential());
+
+                measure('traverse' + i, () => {
+                    for (const n of selectedNodes) {
+                        traverse(n, 9);
+                    }
+                }).log();
             }).log();
         }
     }).log();
@@ -96,7 +138,7 @@ measure('total', () => {
         solutionNodes: solutionNodes.size,
     });
 
-    const bestSolution = getBestPathToOrigin(apipe(
+    const bestSolution = trackBack(apipe(
         solutionNodes,
         it.minBy(node => node.bestKnownActionCount!),
     )!)!;
@@ -112,6 +154,3 @@ measure('total', () => {
         ).join(" "));
 
 }).log();
-
-
-
