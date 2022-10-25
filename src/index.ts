@@ -32,6 +32,7 @@ let nodes = CustomHashSet<ActionNetworkNode>({
     equalsFn: evenv.stateEquals,
 });
 
+const nodesOfInterest = [] as ActionNetworkNode[];
 const solutionNodes = new Set<ActionNetworkNode>();
 
 type State = ReturnType<typeof evenv["evaluate"]>;
@@ -44,7 +45,11 @@ const traverse = (node: ActionNetworkNode, depth: number) => {
     node.knownDepth = depth;
 
     for (const nextNode of [...evenv.generateNextStates(node)].map(nodes.add)) {
-        if (evenv.isSolved(nextNode)) { solutionNodes.add(nextNode); }
+        if (evenv.isSolved(nextNode)) {
+            solutionNodes.add(nextNode);
+        } else if (nextNode.targetsLeft < node.targetsLeft) {
+            nodesOfInterest.push(nextNode);
+        }
         const nextBestKnownActionCount = node.bestKnownActionCount! + 1;
         if (nextBestKnownActionCount < (nextNode.bestKnownActionCount ?? Infinity)) {
             nextNode.from = node;
@@ -70,62 +75,45 @@ const trackBack = (node: ActionNetworkNode): ActionNetworkNode[] => {
     return [...trackBack(node.from!), node];
 }
 
-function orderByAndLimit<T>(s: Iterable<T>, propFn: (x: T) => number, limit: number) {
-    const output = [] as T[];
-    if (limit < 1) { return output; }
+const toGb = (x: number) => `${Math.round((x / (1 << 30)) * 100) / 100} GiB`;
 
-    for (const x of s) {
-        if (output.length === 0 || propFn(x) <= propFn(output[0])) {
-            output.unshift(x);
-            output.splice(limit);
-            continue;
-        }
-        if (propFn(x) >= propFn(output[output.length - 1])) {
-            if (output.length < limit) {
-                output.push(x);
-            }
-            continue;
-        }
-        const i = output.findIndex(x1 => propFn(x) < propFn(x1));
-        output.splice(i, 0, x);
-        output.splice(limit);
-    }
-
-    return output;
-}
 
 measure('total', () => {
     const initialState = nodes.add(evenv.initialState());
     initialState.bestKnownActionCount = 0;
+    nodesOfInterest.push(initialState);
 
     measure('traverse all', () => {
-        for (let i = 0; i < 5; i++) {
-            measure('traverse iteration' + i, () => {
+        for (let i = 0; i < 3; i++) {
+            console.log("==== traverse iteration", i);
+            measure('iteration ' + i, () => {
                 console.log("nodes in cache",
                     nodes.size,
-                    process.memoryUsage().heapUsed.toExponential());
+                    toGb(process.memoryUsage().heapUsed));
 
-                const selectedNodes = orderByAndLimit(
-                    apipe(
-                        nodes[Symbol.iterator](),
-                        it.filter(n => n.knownDepth === undefined
-                            && !evenv.isSolved(n)
-                        )),
-                    n => n.targetsLeft,
-                    15);
+                measure('nodesOfInterest sort ' + i, () => {
+                    nodesOfInterest
+                        .sort((n1, n2) =>
+                            (n1.targetsLeft - n2.targetsLeft)
+                            || (n1.bestKnownActionCount! - n2.bestKnownActionCount!));
+                }).log();
+                console.log("nodesOfInterest",
+                    nodesOfInterest.length,
+                    "best targetsLeft",
+                    nodesOfInterest[0].targetsLeft);
+                console.log("solutionNodes",
+                    solutionNodes.size);
 
-                measure('node cache cleanup ' + i, () => {
-                    cleanUpCache([...selectedNodes, ...solutionNodes]);
+                measure('nodes cleanup ' + i, () => {
+                    cleanUpCache(nodesOfInterest);
                 }).log();
 
-                console.log("nodes in cache after cleanup",
+                console.log("nodes size after cleanup",
                     nodes.size,
-                    process.memoryUsage().heapUsed.toExponential());
+                    toGb(process.memoryUsage().heapUsed));
 
-                measure('traverse' + i, () => {
-                    for (const n of selectedNodes) {
-                        traverse(n, 9);
-                    }
+                measure('traverse ' + i, () => {
+                    traverse(nodesOfInterest.shift()!, 12);
                 }).log();
             }).log();
         }
@@ -138,19 +126,22 @@ measure('total', () => {
         solutionNodes: solutionNodes.size,
     });
 
-    const bestSolution = trackBack(apipe(
-        solutionNodes,
-        it.minBy(node => node.bestKnownActionCount!),
-    )!)!;
-    console.log(
-        "shortest solution",
-        bestSolution.length,
-        bestSolution.map(n =>
-            evenv.tubes(n)
-                .reverse()
-                .map(t => t.length > 0 ? t.join("") : "×")
-                .join("-")
-            + "₀₁₂₃₄₅₆₇₈₉"[n.targetsLeft]
-        ).join(" "));
-
+    if (solutionNodes.size > 0) {
+        const bestSolution = trackBack(apipe(
+            solutionNodes,
+            it.minBy(node => node.bestKnownActionCount!),
+        )!)!;
+        console.log(
+            "shortest solution",
+            bestSolution.length,
+            bestSolution.map(n =>
+                evenv.tubes(n)
+                    .reverse()
+                    .map(t => t.length > 0 ? t.join("") : "x")
+                    .join("-")
+                + "/" + n.targetsLeft
+            ).join(" "));
+    } else {
+        console.log("no solution was found");
+    }
 }).log();
